@@ -1,10 +1,5 @@
 #!/bin/bash
 
-#if [ -z "$1" ]
-#  then
-#    echo "No argument supplied"
-#fi
-
 pid=$!
 
 trap_ctrlc() {
@@ -14,6 +9,7 @@ trap_ctrlc() {
     echo "wait=$? (the exit status from the background process)"
     echo -e "\n\ntrap_ctrlc\n\n"
 }
+
 echo 
 echo "------------------------"
 echo "Sudo executable binaries"
@@ -114,16 +110,6 @@ echo "uid=0(root) gid=1000(swissky)"
 
 echo
 echo "------------------------"
-echo "Writable files"
-echo "------------------------"
-echo
-
-find / -writable ! -user `whoami` -type f ! -path "/proc/*" ! -path "/sys/*" -exec ls -al {} \; 2>/dev/null
-find / -perm -2 -type f 2>/dev/null
-find / ! -path "*/proc/*" -perm -2 -type f -print 2>/dev/null
-
-echo
-echo "------------------------"
 echo "NFS Root Squashing"
 echo "------------------------"
 echo
@@ -164,6 +150,30 @@ echo
 
 ss -tulpn | grep LISTEN
 
+
+echo
+echo "------------------------"
+echo "Id and groups"
+echo "------------------------"
+echo
+
+groups
+echo
+id
+
+echo
+echo "------------------------"
+echo "Bash history"
+echo "------------------------"
+echo
+
+for a in $(find / -name ".*_history" 2> /dev/null | grep "home")
+do
+	echo "Printing: $a contents"
+	cat $a
+	echo
+done
+
 echo
 echo "------------------------"
 echo "Files containing passwords"
@@ -172,4 +182,3 @@ echo
 
 find . -type f -exec grep -i -I "PASSWORD" {} /dev/null \;
 grep --color=auto -rnw '/' -ie "PASSWORD" --color=always 2> /dev/null & sleep 5 ; kill $!
-
