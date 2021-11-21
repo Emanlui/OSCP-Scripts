@@ -18,15 +18,6 @@ echo
 echo "$1" |  sudo -S -l
 echo 
 
-
-echo 
-echo "------------------------"
-echo "Last edited files"
-echo "------------------------"
-echo
- 
-find / -mmin -10 2>/dev/null | grep -Ev "^/proc" 
-
 echo 
 echo "------------------------"
 echo "In memory passwords"
@@ -173,6 +164,13 @@ do
 	cat $a
 	echo
 done
+
+echo
+echo "------------------------"
+echo "/var/log password string found"
+echo "------------------------"
+echo
+grep -R -e 'password' /var/log/ 2> /dev/null
 
 echo
 echo "------------------------"
