@@ -13,3 +13,12 @@ You can also add the password of the user as an argument
 ```bash
 ./emanlui.sh PASS
 ```
+
+
+## NMAP
+
+This will create 3 files: scan, vulns and ports
+
+```bash
+./nmap.sh IP
+```
