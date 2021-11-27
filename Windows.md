@@ -1,5 +1,39 @@
 # Powershell post exploitation
 
+## Summary
+
+- [Powershell post exploitation](#powershell-post-exploitation)
+  - [Summary](#summary)
+  - [Enumeration](#enumeration)
+  - [Access Directory](#access-directory)
+  - [Tools](#tools)
+  - [Privilege Escalation](#privilege-escalation)
+    - [Common commands to use](#common-commands-to-use)
+    - [Unattended passwords](#unattended-passwords)
+    - [Kernel Exploits](#kernel-exploits)
+    - [Applications and Drivers Exploits](#applications-and-drivers-exploits)
+    - [Insecure File or Folder Permissions](#insecure-file-or-folder-permissions)
+    - [Unquoted Service Path](#unquoted-service-path)
+    - [Always Install Elevated](#always-install-elevated)
+    - [Insecure Service Permissions](#insecure-service-permissions)
+    - [Insecure Registry Permissions](#insecure-registry-permissions)
+    - [Token Manipulation](#token-manipulation)
+    - [Potatoes](#potatoes)
+      - [Hot Potatoe](#hot-potatoe)
+      - [Rotten Potatoe](#rotten-potatoe)
+      - [Juicy Potato](#juicy-potato)
+    - [Autologon User Credentials](#autologon-user-credentials)
+    - [Autoruns](#autoruns)
+    - [Passwords Registry](#passwords-registry)
+    - [Security Account Manager Passwords](#security-account-manager-passwords)
+  - [Lateral movement](#lateral-movement)
+    - [Powershell Remoting](#powershell-remoting)
+    - [Remote Code Execution with PS Credentials](#remote-code-execution-with-ps-credentials)
+    - [Import a powershell module and execute its functions remotely](#import-a-powershell-module-and-execute-its-functions-remotely)
+    - [Executing Remote Stateful commands](#executing-remote-stateful-commands)
+  - [Tools](#tools)
+- [Credits](#credits)
+
 ## Enumeration
 
 Get Current Domain: `Get-Domain`
