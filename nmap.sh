@@ -12,18 +12,18 @@ nmap_func () {
 	filtered=$(cat ports| grep "filter" | grep -v "Discovered" | awk '{print $1}' | awk -F '/' '{print $1}' | tr '\n' ',')
 
 
-	echo "Open ports : " ${open::-1}
-	echo "Closed ports : " ${closed::-1}
-	echo "Filtered ports : " ${filtered::-1}
+	echo "Open ports : " $open
+	echo "Closed ports : " $closed
+	echo "Filtered ports : " $filtered
 
-	nmap -p$open -sC -sV $1 $2 -oN scan
+	nmap -p${open::-1} -sC -sV $1 $2 -oN scan
 
 	nmap --script vuln $1 $2 -oN vulns
 }
 
-rm scan
-rm ports
-rm vulns
+rm scan  2> /dev/null || true
+rm ports  2> /dev/null || true
+rm vulns  2> /dev/null || true
 
 nmap -p- -vvv -n --min-rate 5000 -T5 $1 -oN ports 2>&1 > err 
 
